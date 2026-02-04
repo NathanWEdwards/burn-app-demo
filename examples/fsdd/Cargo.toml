@@ -1,0 +1,19 @@
+[package]
+name = "fsdd"
+edition = "2024"
+publish = false
+
+[[example]]
+name = "fsdd"
+
+[dependencies]
+async-channel = { version = "2.5.0" }
+binary        = { path = "../../crates/binary" }
+burn-dataset  = { version = "0.20.0" }
+clap          = { version = "4.5.54", features = ["derive"] }
+mel_spec      = { version = "0.3.4" }
+ndarray       = { version = "0.16.1" }
+plotters      = { version = "0.3.7" }
+rustfft       = { version = "6.4.1" }
+tokio         = { version = "1.49.0", features = ["fs"] }
+wavers        = { version = "1.5.1" }
