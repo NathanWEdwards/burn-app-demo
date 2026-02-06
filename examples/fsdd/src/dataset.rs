@@ -1,3 +1,25 @@
+/// MIT License
+///
+/// Copyright (c) 2026 Nathan Edwards
+///
+/// Permission is hereby granted, free of charge, to any person obtaining a copy
+/// of this software and associated documentation files (the "Software"), to deal
+/// in the Software without restriction, including without limitation the rights
+/// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+/// copies of the Software, and to permit persons to whom the Software is
+/// furnished to do so, subject to the following conditions:
+///
+/// The above copyright notice and this permission notice shall be included in all
+/// copies or substantial portions of the Software.
+///
+/// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+/// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+/// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+/// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+/// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+/// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+/// SOFTWARE.
+
 use core::task::Poll;
 use std::path::{
     Path,
@@ -9,9 +31,20 @@ use async_channel::{
     TryRecvError,
     bounded
 };
-use burn_dataset::{
-    Dataset,
-    InMemDataset
+use burn::{
+    data::{
+        dataset::{
+            Dataset,
+            InMemDataset
+        },
+        dataloader::{
+            batcher::Batcher
+        }
+    },
+    tensor::{
+        backend::Backend,
+        Tensor
+    }
 };
 use tokio::{
         fs::read_dir,
@@ -21,14 +54,15 @@ use tokio::{
 };
 use crate::convert::to_samples;
 
+#[derive(Clone, Debug)]
 struct FsddItem {
-    pub samples: Vec<f64>
+    pub data: Vec<f64>
 }
 
 impl FsddItem {
-    pub fn new(samples: Vec<f64>) -> Self {
+    pub fn new(data: Vec<f64>) -> Self {
         FsddItem {
-            samples
+            data
         }
     }
 }
@@ -143,5 +177,56 @@ impl FsddDataset {
         let items = loader.load();
         let dataset = InMemDataset::new(items);
         FsddDataset { dataset }
+    }
+}
+
+impl Dataset<FsddItem> for FsddDataset {
+    fn get(&self, index: usize) -> Option<FsddItem> {
+        self.dataset.get(index)
+    }
+
+    fn len(&self) -> usize {
+        self.dataset.len()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FsddBatch<B: Backend> {
+    pub inputs: Tensor<B, 2>,
+    pub targets: Tensor<B, 2>
+}
+
+pub struct FsddBatcher<B: Backend> {
+    device: B::Device
+}
+
+impl<B: Backend> FsddBatcher<B> {
+    pub fn new(device: B::Device) -> Self {
+        Self { device }
+    }
+}
+
+impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
+    fn batch(&self, items: Vec<FsddItem>, device: &B::Device) -> FsddBatch<B> {
+        let inputs = items
+            .iter()
+            .map(|item| Tensor::<B, 1>::from_floats(
+                item.data.as_slice(),
+                &self.device
+            ))
+            .map(|tensor| tensor.reshape([1, -1]))
+            .collect();
+        let targets = items
+            .iter()
+            .map(|item| Tensor::<B, 1>::from_floats(
+                item.data.as_slice(),
+                &self.device
+            ))
+            .map(|tensor| tensor.reshape([1, -1]))
+            .collect();
+        FsddBatch {
+            inputs: Tensor::cat(inputs, 0),
+            targets: Tensor::cat(targets, 0)
+        }
     }
 }
