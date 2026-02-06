@@ -1,3 +1,11 @@
+//! This module defines a custom dataset for the Free Spoken Digit Dataset (FSDD)
+//! using asynchronous file loading with Tokio. It defines a `Loader` struct to manage
+//! the loading process, which includes discovering .wav files in a specified directory
+//! and converting them into `FsddItem` instances. The `FsddDataset` struct implements
+//! the `Dataset` trait, allowing it to be used with Burn's data loading utilities.
+//! Additionally, a `FsddBatcher` struct is provided to batch the loaded items into tensors
+//! suitable for training machine learning models.
+
 /// MIT License
 ///
 /// Copyright (c) 2026 Nathan Edwards
