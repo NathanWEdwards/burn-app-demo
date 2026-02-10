@@ -27,6 +27,7 @@ use burn::{
         Tensor
     }
 };
+use plotters::style::full_palette::TEAL;
 use tokio::{
         fs::read_dir,
         runtime::Runtime,
@@ -178,12 +179,13 @@ pub struct FsddBatch<B: Backend> {
 
 #[derive(Clone, Debug)]
 pub struct FsddBatcher<B: Backend> {
-    device: B::Device
+    device: B::Device,
+    channel_size: usize
 }
 
 impl<B: Backend> FsddBatcher<B> {
-    pub fn new(device: B::Device) -> Self {
-        Self { device }
+    pub fn new(device: B::Device, channel_size: usize) -> Self {
+        Self { device, channel_size }
     }
 }
 
@@ -195,8 +197,22 @@ impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
                 item.data.as_slice(),
                 &self.device
             ))
+            .map(|tensor| {
+                if tensor.dims()[0] >= self.channel_size {
+                    tensor.slice([0..self.channel_size])
+                } else {
+                    Tensor::<B, 1>::cat(
+                        vec![
+                            tensor.clone(),
+                            Tensor::<B, 1>::zeros([self.channel_size - tensor.dims()[0]], &self.device)
+                        ],
+                        0
+                    )
+                }
+            })
             .map(|tensor| tensor.reshape([1, -1]))
             .collect();
+
         let targets = items
             .iter()
             .map(|item| Tensor::<B, 1>::from_floats(
