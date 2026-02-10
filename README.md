@@ -1,3 +1,3 @@
-# Burn Free
+# Burn App Demo
 
-Examples leveraging the [Burn deep learning framework](https://burn.dev).
+Repository demonstrating use of the [Burn deep learning framework](https://burn.dev).
