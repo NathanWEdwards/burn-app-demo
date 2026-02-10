@@ -6,37 +6,10 @@
 //! Additionally, a `FsddBatcher` struct is provided to batch the loaded items into tensors
 //! suitable for training machine learning models.
 
-/// MIT License
-///
-/// Copyright (c) 2026 Nathan Edwards
-///
-/// Permission is hereby granted, free of charge, to any person obtaining a copy
-/// of this software and associated documentation files (the "Software"), to deal
-/// in the Software without restriction, including without limitation the rights
-/// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-/// copies of the Software, and to permit persons to whom the Software is
-/// furnished to do so, subject to the following conditions:
-///
-/// The above copyright notice and this permission notice shall be included in all
-/// copies or substantial portions of the Software.
-///
-/// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-/// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-/// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-/// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-/// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-/// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-/// SOFTWARE.
-
-use core::task::Poll;
-use std::path::{
-    Path,
-    PathBuf
-};
+use std::path::PathBuf;
 use async_channel::{
     Receiver,
     Sender,
-    TryRecvError,
     bounded
 };
 use burn::{
@@ -57,13 +30,12 @@ use burn::{
 use tokio::{
         fs::read_dir,
         runtime::Runtime,
-        task::JoinSet,
-        task::spawn
+        task::JoinSet
 };
 use crate::convert::to_samples;
 
 #[derive(Clone, Debug)]
-struct FsddItem {
+pub struct FsddItem {
     pub data: Vec<f64>
 }
 
@@ -98,9 +70,9 @@ impl Loader {
     }
 
     pub fn load(&self) -> Vec<FsddItem> {
-        let (fs_channel_send, mut fs_channel_receive) = bounded::<PathBuf>(self.dir_channel_capacity);
+        let (fs_channel_send, fs_channel_receive) = bounded::<PathBuf>(self.dir_channel_capacity);
         let fs_channel_receive_clone_for_discovery = fs_channel_receive.clone();
-        let (wav_file_channel_send, mut wav_file_channel_receive) = bounded::<PathBuf>(self.file_channel_capacity);
+        let (wav_file_channel_send, wav_file_channel_receive) = bounded::<PathBuf>(self.file_channel_capacity);
         let cloned_path = self.path.clone();
         // Declarations for asynchronous use.
         let mut joinset = JoinSet::new();
@@ -109,7 +81,7 @@ impl Loader {
             rt.block_on(async {
                 let mut data: Vec<FsddItem> = Vec::new();
                 // Add the initial path to start discovery.
-                fs_channel_send.send(cloned_path).await;
+                let _ = fs_channel_send.send(cloned_path).await;
                 // Spawn tasks to handle discovered .wav files.
                 for _ in 0..self.num_threads {
                     let wav_file_channel_clone = wav_file_channel_receive.clone();
@@ -118,7 +90,7 @@ impl Loader {
                             while let Ok(wav_file) = wav_file_channel_clone.recv().await {
                                 if let Some(file) = wav_file.to_str() {
                                     let (samples, _) = to_samples(file);
-                                    let mut item: FsddItem = FsddItem::new(samples); 
+                                    let item: FsddItem = FsddItem::new(samples); 
                                     thread_items.push(item);
                                 }
                             }
@@ -157,7 +129,7 @@ async fn discover_wav_files(
                 // Send .wav files over the wav_file_channel
                 if let Some(ext) = entry.path().extension() {
                     if ext == "wav" {
-                        wav_file_sender.send(entry.path()).await;
+                        let _ = wav_file_sender.send(entry.path()).await;
                     }
                 }
             }
@@ -204,6 +176,7 @@ pub struct FsddBatch<B: Backend> {
     pub targets: Tensor<B, 2>
 }
 
+#[derive(Clone, Debug)]
 pub struct FsddBatcher<B: Backend> {
     device: B::Device
 }
@@ -215,7 +188,7 @@ impl<B: Backend> FsddBatcher<B> {
 }
 
 impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
-    fn batch(&self, items: Vec<FsddItem>, device: &B::Device) -> FsddBatch<B> {
+    fn batch(&self, items: Vec<FsddItem>, _device: &B::Device) -> FsddBatch<B> {
         let inputs = items
             .iter()
             .map(|item| Tensor::<B, 1>::from_floats(
