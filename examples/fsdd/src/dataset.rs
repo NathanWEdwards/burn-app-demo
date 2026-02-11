@@ -191,7 +191,7 @@ impl<B: Backend> FsddBatcher<B> {
 
 impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
     fn batch(&self, items: Vec<FsddItem>, _device: &B::Device) -> FsddBatch<B> {
-        let inputs = items
+        let inputs: Vec<Tensor<B, 2>> = items
             .iter()
             .map(|item| Tensor::<B, 1>::from_floats(
                 item.data.as_slice(),
@@ -212,18 +212,9 @@ impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
             })
             .map(|tensor| tensor.reshape([1, -1]))
             .collect();
-
-        let targets = items
-            .iter()
-            .map(|item| Tensor::<B, 1>::from_floats(
-                item.data.as_slice(),
-                &self.device
-            ))
-            .map(|tensor| tensor.reshape([1, -1]))
-            .collect();
         FsddBatch {
-            inputs: Tensor::cat(inputs, 0),
-            targets: Tensor::cat(targets, 0)
+            inputs: Tensor::cat(inputs.clone(), 0),
+            targets: Tensor::cat(inputs, 0)
         }
     }
 }
