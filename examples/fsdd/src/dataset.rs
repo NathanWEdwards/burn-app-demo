@@ -6,44 +6,26 @@
 //! Additionally, a `FsddBatcher` struct is provided to batch the loaded items into tensors
 //! suitable for training machine learning models.
 
-use std::path::PathBuf;
-use async_channel::{
-    Receiver,
-    Sender,
-    bounded
-};
+use crate::convert::to_samples;
+use async_channel::{Receiver, Sender, bounded};
 use burn::{
     data::{
-        dataset::{
-            Dataset,
-            InMemDataset
-        },
-        dataloader::{
-            batcher::Batcher
-        }
+        dataloader::batcher::Batcher,
+        dataset::{Dataset, InMemDataset},
     },
-    tensor::{
-        backend::Backend,
-        Tensor
-    }
+    tensor::{Tensor, backend::Backend},
 };
-use tokio::{
-        fs::read_dir,
-        runtime::Runtime,
-        task::JoinSet
-};
-use crate::convert::to_samples;
+use std::path::PathBuf;
+use tokio::{fs::read_dir, runtime::Runtime, task::JoinSet};
 
 #[derive(Clone, Debug)]
 pub struct FsddItem {
-    pub data: Vec<f64>
+    pub data: Vec<f64>,
 }
 
 impl FsddItem {
     pub fn new(data: Vec<f64>) -> Self {
-        FsddItem {
-            data
-        }
+        FsddItem { data }
     }
 }
 
@@ -51,7 +33,7 @@ struct Loader {
     dir_channel_capacity: usize,
     file_channel_capacity: usize,
     num_threads: usize,
-    path: PathBuf
+    path: PathBuf,
 }
 
 impl Loader {
@@ -59,20 +41,21 @@ impl Loader {
         dir_channel_capacity: usize,
         file_channel_capacity: usize,
         num_threads: usize,
-        path: PathBuf
+        path: PathBuf,
     ) -> Self {
         Loader {
             dir_channel_capacity,
             file_channel_capacity,
             num_threads,
-            path
+            path,
         }
     }
 
     pub fn load(&self) -> Vec<FsddItem> {
         let (fs_channel_send, fs_channel_receive) = bounded::<PathBuf>(self.dir_channel_capacity);
         let fs_channel_receive_clone_for_discovery = fs_channel_receive.clone();
-        let (wav_file_channel_send, wav_file_channel_receive) = bounded::<PathBuf>(self.file_channel_capacity);
+        let (wav_file_channel_send, wav_file_channel_receive) =
+            bounded::<PathBuf>(self.file_channel_capacity);
         let cloned_path = self.path.clone();
         // Declarations for asynchronous use.
         let mut joinset = JoinSet::new();
@@ -86,15 +69,15 @@ impl Loader {
                 for _ in 0..self.num_threads {
                     let wav_file_channel_clone = wav_file_channel_receive.clone();
                     joinset.spawn(async move {
-                            let mut thread_items: Vec<FsddItem> = Vec::new();
-                            while let Ok(wav_file) = wav_file_channel_clone.recv().await {
-                                if let Some(file) = wav_file.to_str() {
-                                    let (samples, _) = to_samples(file);
-                                    let item: FsddItem = FsddItem::new(samples); 
-                                    thread_items.push(item);
-                                }
+                        let mut thread_items: Vec<FsddItem> = Vec::new();
+                        while let Ok(wav_file) = wav_file_channel_clone.recv().await {
+                            if let Some(file) = wav_file.to_str() {
+                                let (samples, _) = to_samples(file);
+                                let item: FsddItem = FsddItem::new(samples);
+                                thread_items.push(item);
                             }
-                            thread_items
+                        }
+                        thread_items
                     });
                 }
                 // Drop original sender to close channels when done.
@@ -102,8 +85,9 @@ impl Loader {
                 // Spawn a task to discover .wav files.
                 discover_wav_files(
                     fs_channel_receive_clone_for_discovery,
-                    wav_file_channel_send
-                ).await;
+                    wav_file_channel_send,
+                )
+                .await;
                 while let Some(result) = joinset.join_next().await {
                     if let Ok(mut items) = result {
                         data.append(&mut items);
@@ -117,10 +101,7 @@ impl Loader {
     }
 }
 
-async fn discover_wav_files(
-    fs_receiver: Receiver<PathBuf>,
-    wav_file_sender: Sender<PathBuf>,
-) {
+async fn discover_wav_files(fs_receiver: Receiver<PathBuf>, wav_file_sender: Sender<PathBuf>) {
     // Start processing directories.
     if let Ok(directory) = fs_receiver.recv().await {
         if let Ok(mut read_directory) = read_dir(&directory).await {
@@ -138,7 +119,7 @@ async fn discover_wav_files(
 }
 
 pub struct FsddDataset {
-    dataset: InMemDataset<FsddItem>
+    dataset: InMemDataset<FsddItem>,
 }
 
 impl FsddDataset {
@@ -146,13 +127,13 @@ impl FsddDataset {
         path: PathBuf,
         dir_channel_capacity: usize,
         file_channel_capacity: usize,
-        num_threads: usize
+        num_threads: usize,
     ) -> Self {
         let loader = Loader::new(
             dir_channel_capacity,
             file_channel_capacity,
             num_threads,
-            path
+            path,
         );
         let items = loader.load();
         let dataset = InMemDataset::new(items);
@@ -173,18 +154,21 @@ impl Dataset<FsddItem> for FsddDataset {
 #[derive(Clone, Debug)]
 pub struct FsddBatch<B: Backend> {
     pub inputs: Tensor<B, 2>,
-    pub targets: Tensor<B, 2>
+    pub targets: Tensor<B, 2>,
 }
 
 #[derive(Clone, Debug)]
 pub struct FsddBatcher<B: Backend> {
     device: B::Device,
-    channel_size: usize
+    channel_size: usize,
 }
 
 impl<B: Backend> FsddBatcher<B> {
     pub fn new(device: B::Device, channel_size: usize) -> Self {
-        Self { device, channel_size }
+        Self {
+            device,
+            channel_size,
+        }
     }
 }
 
@@ -192,10 +176,7 @@ impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
     fn batch(&self, items: Vec<FsddItem>, _device: &B::Device) -> FsddBatch<B> {
         let inputs: Vec<Tensor<B, 2>> = items
             .iter()
-            .map(|item| Tensor::<B, 1>::from_floats(
-                item.data.as_slice(),
-                &self.device
-            ))
+            .map(|item| Tensor::<B, 1>::from_floats(item.data.as_slice(), &self.device))
             .map(|tensor| {
                 if tensor.dims()[0] >= self.channel_size {
                     tensor.slice([0..self.channel_size])
@@ -203,9 +184,12 @@ impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
                     Tensor::<B, 1>::cat(
                         vec![
                             tensor.clone(),
-                            Tensor::<B, 1>::zeros([self.channel_size - tensor.dims()[0]], &self.device)
+                            Tensor::<B, 1>::zeros(
+                                [self.channel_size - tensor.dims()[0]],
+                                &self.device,
+                            ),
                         ],
-                        0
+                        0,
                     )
                 }
             })
@@ -213,7 +197,7 @@ impl<B: Backend> Batcher<B, FsddItem, FsddBatch<B>> for FsddBatcher<B> {
             .collect();
         FsddBatch {
             inputs: Tensor::cat(inputs.clone(), 0),
-            targets: Tensor::cat(inputs, 0)
+            targets: Tensor::cat(inputs, 0),
         }
     }
 }
