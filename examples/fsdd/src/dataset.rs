@@ -27,7 +27,6 @@ use burn::{
         Tensor
     }
 };
-use plotters::style::full_palette::TEAL;
 use tokio::{
         fs::read_dir,
         runtime::Runtime,
