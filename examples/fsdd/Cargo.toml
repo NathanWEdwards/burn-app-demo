@@ -10,6 +10,7 @@ name = "fsdd"
 async-channel      = { version = "2.5.0" }
 app                = { path = "../../crates/app" }
 burn               = { version = "0.20.0", features = ["autodiff", "dataset"] }
+chrono             = { version = "0.4" }
 clap               = { version = "4.5.54", features = ["derive"] }
 hound              = { version = "3" }
 mel_spec           = { version = "0.3.4" }
